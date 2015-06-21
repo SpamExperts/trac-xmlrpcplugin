@@ -88,11 +88,10 @@ class TicketRPC(Component):
         since = to_utimestamp(since)
         db = self.env.get_db_cnx()
         cursor = db.cursor()
-        cursor.execute('SELECT id FROM ticket'
-                       ' WHERE changetime >= %s', (since,))
+        query = 'SELECT id FROM ticket WHERE changetime >= %s'
         result = []
         ticket_realm = Resource('ticket')
-        for row in cursor:
+        for row in self.env.db_query(query, (since,)):
             tid = int(row[0])
             if 'TICKET_VIEW' in req.perm(ticket_realm(id=tid)):
                 result.append(tid)
