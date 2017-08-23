@@ -55,7 +55,7 @@ class ProtocolProviderTestCase(TracRpcTestCase):
             self.fail("Expected urllib2.HTTPError")
         except urllib2.HTTPError, e:
             self.assertEquals(e.code, 415)
-        # Make a new plugin 
+        # Make a new plugin
         provider = os.path.join(rpc_testenv.tracdir, 'plugins', 'DummyProvider.py')
         open(provider, 'w').write(
             "from trac.core import *\n"
@@ -71,7 +71,8 @@ class ProtocolProviderTestCase(TracRpcTestCase):
             "    def send_rpc_error(self, req, e):\n"
             "        rpcreq = req.rpc\n"
             "        req.send_error(None, template='', content_type=rpcreq['mimetype'],\n"
-            "                       status=500, env=None, data='Test failure ')\n"
+            "                       status=500, env=None,\n"
+            "                       data='Test failure: %s' % str(e))\n"
             "    def send_rpc_result(self, req, result):\n"
             "        rpcreq = req.rpc\n"
             "        # raise KeyError('Here')\n"

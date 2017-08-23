@@ -17,7 +17,7 @@ from tracrpc.xml_rpc import to_xmlrpc_datetime
 from tracrpc.tests import rpc_testenv, TracRpcTestCase
 
 class RpcTicketTestCase(TracRpcTestCase):
-    
+
     def setUp(self):
         TracRpcTestCase.setUp(self)
         self.anon = xmlrpclib.ServerProxy(rpc_testenv.url_anon)
@@ -36,9 +36,20 @@ class RpcTicketTestCase(TracRpcTestCase):
         self.assertEquals('admin', attributes['reporter'])
         self.admin.ticket.delete(tid)
 
+    def test_create_empty_summary(self):
+        try:
+            tid = self.admin.ticket.create("", "the description", {})
+            self.fail("Exception not raised creating ticket with empty summary")
+        except xmlrpclib.Fault, e:
+            self.assertIn("Tickets must contain a summary.", unicode(e))
+
     def test_getActions(self):
-        tid = self.admin.ticket.create("ticket_getActions", "kjsald", {})
-        actions = self.admin.ticket.getActions(tid)
+        tid = self.admin.ticket.create("ticket_getActions", "kjsald",
+                                        {'owner': ''})
+        try:
+            actions = self.admin.ticket.getActions(tid)
+        finally:
+            self.admin.ticket.delete(tid)
         default = [['leave', 'leave', '.', []], ['resolve', 'resolve',
                     "The resolution will be set. Next status will be 'closed'.",
                    [['action_resolve_resolve_resolution', 'fixed',
@@ -59,37 +70,49 @@ class RpcTicketTestCase(TracRpcTestCase):
         # Adjust for trac:changeset:11778
         if actions[0][2] != '.':
             default[0][2] = 'The ticket will remain with no owner.'
+        # Adjust for trac:changeset:13203 and trac:changeset:14393
+        if '<span class=' in actions[2][2]:
+            default[2][2] = default[2][2].replace(' (none)',
+                    ' <span class="trac-author-none">(none)</span>')
+            default[3][2] = default[3][2].replace(' (none)',
+                    ' <span class="trac-author-none">(none)</span>')
+            default[3][2] = default[3][2].replace(' admin',
+                    ' <span class="trac-author-user">admin</span>')
         self.assertEquals(actions, default)
-        self.admin.ticket.delete(tid)
 
     def test_getAvailableActions_DeleteTicket(self):
         # http://trac-hacks.org/ticket/5387
         tid = self.admin.ticket.create('abc', 'def', {})
-        self.assertEquals(False,
-                'delete' in self.admin.ticket.getAvailableActions(tid))
-        env = rpc_testenv.get_trac_environment()
-        delete_plugin = os.path.join(rpc_testenv.tracdir,
-                                    'plugins', 'DeleteTicket.py')
-        shutil.copy(os.path.join(
-            rpc_testenv.trac_src, 'sample-plugins', 'workflow', 'DeleteTicket.py'),
-                    delete_plugin)
-        env.config.set('ticket', 'workflow',
-                'ConfigurableTicketWorkflow,DeleteTicketActionController')
-        env.config.save()
-        self.assertEquals(True,
-                'delete' in self.admin.ticket.getAvailableActions(tid))
-        self.assertEquals(False,
-                'delete' in self.user.ticket.getAvailableActions(tid))
-        env.config.set('ticket', 'workflow',
-                'ConfigurableTicketWorkflow')
-        env.config.save()
-        rpc_testenv.restart()
-        self.assertEquals(False,
-                'delete' in self.admin.ticket.getAvailableActions(tid))
-        # Clean up
-        os.unlink(delete_plugin)
-        rpc_testenv.restart()
-        self.assertEquals(0, self.admin.ticket.delete(tid))
+        try:
+            self.assertEquals(False,
+                    'delete' in self.admin.ticket.getAvailableActions(tid))
+            env = rpc_testenv.get_trac_environment()
+            delete_plugin = os.path.join(rpc_testenv.tracdir,
+                                        'plugins', 'DeleteTicket.py')
+            shutil.copy(os.path.join(
+                rpc_testenv.trac_src, 'sample-plugins', 'workflow',
+                        'DeleteTicket.py'), delete_plugin)
+            env.config.set('ticket', 'workflow',
+                    'ConfigurableTicketWorkflow,DeleteTicketActionController')
+            env.config.save()
+            self.assertEquals(True,
+                    'delete' in self.admin.ticket.getAvailableActions(tid))
+            self.assertEquals(False,
+                    'delete' in self.user.ticket.getAvailableActions(tid))
+            env.config.set('ticket', 'workflow',
+                    'ConfigurableTicketWorkflow')
+            env.config.save()
+            rpc_testenv.restart()
+            self.assertEquals(False,
+                    'delete' in self.admin.ticket.getAvailableActions(tid))
+        finally:
+            # Clean up
+            try:
+                os.unlink(delete_plugin)
+            except:
+                pass
+            rpc_testenv.restart()
+            self.assertEquals(0, self.admin.ticket.delete(tid))
 
     def test_FineGrainedSecurity(self):
         self.assertEquals(1, self.admin.ticket.create('abc', '123', {}))
@@ -139,9 +162,9 @@ class RpcTicketTestCase(TracRpcTestCase):
         tid1 = self.admin.ticket.create("ticket_getRecentChanges", "one", {})
         time.sleep(1)
         tid2 = self.admin.ticket.create("ticket_getRecentChanges", "two", {})
-        _id, created, modified, attributes = self.admin.ticket.get(tid2)
-        changes = self.admin.ticket.getRecentChanges(created)
         try:
+            _id, created, modified, attributes = self.admin.ticket.get(tid2)
+            changes = self.admin.ticket.getRecentChanges(created)
             self.assertEquals(changes, [tid2])
         finally:
             self.admin.ticket.delete(tid1)
@@ -315,7 +338,8 @@ class RpcTicketTestCase(TracRpcTestCase):
 
     def test_update_action(self):
         # Updating with 'action' in attributes
-        tid = self.admin.ticket.create('test_update_action', 'ss')
+        tid = self.admin.ticket.create('test_update_action', 'ss',
+                                       {'owner': ''})
         current = self.admin.ticket.get(tid)
         self.assertEqual('', current[3].get('owner', ''))
         updated = self.admin.ticket.update(tid, "comment1",
@@ -373,9 +397,28 @@ class RpcTicketTestCase(TracRpcTestCase):
                           "</methodResponse>\n", response.read())
         self.admin.ticket.delete(1)
 
+    def test_update_ticket_12430(self):
+        # What if ticket 'time' and 'changetime' are part of attributes?
+        # See https://trac-hacks.org/ticket/12430
+        tid1 = self.admin.ticket.create('test_update_ticket_12430', 'ok?', {
+                        'owner': 'osimons1'})
+        try:
+            # Get a fresh full copy
+            tid2, created, changed, values = self.admin.ticket.get(tid1)
+            self.assertTrue('time' in values, "'time' field not returned?")
+            self.assertTrue('changetime' in values,
+                            "'changetime' field not returned?")
+            self.assertTrue('_ts' in values, "No _ts in values?")
+            # Update
+            values['action'] = 'leave'
+            values['owner'] = 'osimons2'
+            self.admin.ticket.update(tid2, "updating", values)
+        finally:
+            self.admin.ticket.delete(tid1)
+
 
 class RpcTicketVersionTestCase(TracRpcTestCase):
-    
+
     def setUp(self):
         TracRpcTestCase.setUp(self)
         self.anon = xmlrpclib.ServerProxy(rpc_testenv.url_anon)

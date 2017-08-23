@@ -14,7 +14,7 @@ import xmlrpclib
 from tracrpc.tests import rpc_testenv, TracRpcTestCase
 
 class RpcXmlTestCase(TracRpcTestCase):
-    
+
     def setUp(self):
         TracRpcTestCase.setUp(self)
         self.anon = xmlrpclib.ServerProxy(rpc_testenv.url_anon)
@@ -94,10 +94,11 @@ class RpcXmlTestCase(TracRpcTestCase):
         # A Ticket resource
         e = self.assertRaises(xmlrpclib.Fault, self.admin.ticket.get, 2147483647)
         self.assertEquals(e.faultCode, 404)
-        self.assertEquals(e.faultString, 
+        self.assertEquals(e.faultString,
                 'Ticket 2147483647 does not exist.')
         # A Wiki resource
-        e = self.assertRaises(xmlrpclib.Fault, self.admin.wiki.getPage, "Test", 10)
+        e = self.assertRaises(xmlrpclib.Fault, self.admin.wiki.getPage,
+                            "Test", 10)
         self.assertEquals(e.faultCode, 404)
         self.assertEquals(e.faultString,
                 'Wiki page "Test" does not exist at version 10')
@@ -106,9 +107,12 @@ class RpcXmlTestCase(TracRpcTestCase):
         tid1 = self.admin.ticket.create(
                             'One & Two < Four', 'Desc & ription\nLine 2', {})
         ticket = self.admin.ticket.get(tid1)
-        self.assertEquals('One & Two < Four', ticket[3]['summary'])
-        self.assertEquals('Desc & ription\r\nLine 2', ticket[3]['description'])
-        self.admin.ticket.delete(tid1)
+        try:
+            self.assertEquals('One & Two < Four', ticket[3]['summary'])
+            self.assertEquals('Desc & ription\r\nLine 2',
+                            ticket[3]['description'])
+        finally:
+            self.admin.ticket.delete(tid1)
 
     def test_xml_encoding_invalid_characters(self):
         # Enable ticket manipulator

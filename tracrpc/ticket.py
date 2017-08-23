@@ -22,6 +22,7 @@ from trac.ticket.notification import TicketNotifyEmail
 from trac.ticket.web_ui import TicketModule
 from trac.web.chrome import add_warning
 from trac.util.datefmt import to_datetime, utc
+from trac.util.text import to_unicode
 
 from tracrpc.api import IXMLRPCHandler, expose_rpc, Binary
 from tracrpc.util import StringIO, to_utimestamp, from_utimestamp
@@ -86,12 +87,17 @@ class TicketRPC(Component):
     def getRecentChanges(self, req, since):
         """Returns a list of IDs of tickets that have changed since timestamp."""
         since = to_utimestamp(since)
-        db = self.env.get_db_cnx()
-        cursor = db.cursor()
         query = 'SELECT id FROM ticket WHERE changetime >= %s'
+        if hasattr(self.env, 'db_query'):
+            generator = self.env.db_query(query, (since,))
+        else:
+            db = self.env.get_db_cnx()
+            cursor = db.cursor()
+            cursor.execute(query, (since,))
+            generator = cursor
         result = []
         ticket_realm = Resource('ticket')
-        for row in self.env.db_query(query, (since,)):
+        for row in generator:
             tid = int(row[0])
             if 'TICKET_VIEW' in req.perm(ticket_realm(id=tid)):
                 result.append(tid)
@@ -119,7 +125,7 @@ class TicketRPC(Component):
                     label, widget, hint = \
                         controller.render_ticket_action_control(req, t, action)
                     fragment += widget
-                    hints.append(hint.rstrip('.') + '.')
+                    hints.append(to_unicode(hint).rstrip('.') + '.')
                     first_label = first_label == None and label or first_label
             controls = []
             for elem in fragment.children:
@@ -153,6 +159,8 @@ class TicketRPC(Component):
     def create(self, req, summary, description, attributes={}, notify=False, when=None):
         """ Create a new ticket, returning the ticket ID.
         Overriding 'when' requires admin permission. """
+        if not summary:
+            raise TracError("Tickets must contain a summary.")
         t = model.Ticket(self.env)
         t['summary'] = summary
         t['description'] = description
@@ -164,7 +172,7 @@ class TicketRPC(Component):
         # custom create timestamp?
         if when and not 'TICKET_ADMIN' in req.perm:
             self.log.warn("RPC ticket.create: %r not allowed to create with "
-                    "non-current timestamp (%r)", req.authname, when)
+                          "non-current timestamp (%r)", req.authname, when)
             when = None
         t.insert(when=when)
         if notify:
@@ -173,7 +181,7 @@ class TicketRPC(Component):
                 tn.notify(t, newticket=True)
             except Exception, e:
                 self.log.exception("Failure sending notification on creation "
-                                   "of ticket #%s: %s" % (t.id, e))
+                                   "of ticket #%s: %s", t.id, e)
         return t.id
 
     def update(self, req, id, comment, attributes={}, notify=False, author='', when=None):
@@ -191,20 +199,25 @@ class TicketRPC(Component):
                             or 'TICKET_ADMIN' in req.perm(t.resource)):
             # only allow custom author if anonymous is permitted or user is admin
             self.log.warn("RPC ticket.update: %r not allowed to change author "
-                    "to %r for comment on #%d", req.authname, author, id)
+                          "to %r for comment on #%d", req.authname, author, id)
             author = ''
         author = author or req.authname
         # custom change timestamp?
         if when and not 'TICKET_ADMIN' in req.perm(t.resource):
-            self.log.warn("RPC ticket.update: %r not allowed to update #%d with "
-                    "non-current timestamp (%r)", author, id, when)
+            self.log.warn("RPC ticket.update: %r not allowed to update #%d "
+                          "with non-current timestamp (%r)", author, id, when)
             when = None
         when = when or to_datetime(None, utc)
+        # never try to update 'time' and 'changetime' attributes directly
+        if 'time' in attributes:
+            del attributes['time']
+        if 'changetime' in attributes:
+            del attributes['changetime']
         # and action...
         if not 'action' in attributes:
             # FIXME: Old, non-restricted update - remove soon!
-            self.log.warning("Rpc ticket.update for ticket %d by user %s " \
-                    "has no workflow 'action'." % (id, req.authname))
+            self.log.warning("Rpc ticket.update for ticket %d by user %s "
+                             "has no workflow 'action'.", id, req.authname)
             req.perm(t.resource).require('TICKET_MODIFY')
             time_changed = attributes.pop('_ts', None)
             if time_changed and \
@@ -249,7 +262,7 @@ class TicketRPC(Component):
                     " ".join([warning for warning in req.chrome['warnings']]))
             else:
                 tm._apply_ticket_changes(t, changes)
-                self.log.debug("Rpc ticket.update save: %s" % repr(t.values))
+                self.log.debug("Rpc ticket.update save: %r", t.values)
                 t.save_changes(author, comment, when=when)
                 # Apply workflow side-effects
                 for controller in controllers:
@@ -260,7 +273,7 @@ class TicketRPC(Component):
                 tn.notify(t, newticket=False, modtime=when)
             except Exception, e:
                 self.log.exception("Failure sending notification on change of "
-                                   "ticket #%s: %s" % (t.id, e))
+                                   "ticket #%s: %s", t.id, e)
         return self.get(req, t.id)
 
     def delete(self, req, id):
@@ -344,7 +357,7 @@ class StatusRPC(Component):
     def getAll(self, req):
         """ Returns all ticket states described by active workflow. """
         return TicketSystem(self.env).get_all_status()
-    
+
     def get(self, req, name):
         """ Deprecated no-op method. Do not use. """
         # FIXME: Remove
@@ -445,7 +458,7 @@ def ticketEnumFactory(cls):
             if (cls.__name__ == 'Status'):
                i = cls(self.env)
                x = name
-            else: 
+            else:
                i = cls(self.env, name)
                x = i.value
             return x

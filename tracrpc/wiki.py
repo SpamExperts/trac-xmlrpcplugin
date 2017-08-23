@@ -85,8 +85,15 @@ class WikiRPC(Component):
                  '               FROM wiki w2 '
                  '               WHERE w2.name=w1.name) '
                  'ORDER BY time DESC')
+        if hasattr(self.env, 'db_query'):
+            generator = self.env.db_query(query, (since,))
+        else:
+            db = self.env.get_db_cnx()
+            cursor = db.cursor()
+            cursor.execute(query, (since,))
+            generator = cursor
         result = []
-        for name, when, author, version, comment in self.env.db_query(query, (since,)):
+        for name, when, author, version, comment in generator:
             if 'WIKI_VIEW' in req.perm(wiki_realm(id=name, version=version)):
                 result.append(
                     self._page_info(name, from_utimestamp(when),
