@@ -259,7 +259,7 @@ class XMLRPCSystem(Component):
     method_handlers = ExtensionPoint(IXMLRPCHandler)
 
     def get_system_info(self):
-        yield 'RPC', __import__('tracrpc', ['__version__']).__version__)
+        yield 'RPC', __import__('tracrpc', ['__version__']).__version__
 
     # IPermissionRequestor methods
     def get_permission_actions(self):
