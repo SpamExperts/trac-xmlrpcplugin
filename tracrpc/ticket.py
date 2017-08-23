@@ -18,7 +18,8 @@ from trac.resource import Resource, ResourceNotFound
 import trac.ticket.model as model
 import trac.ticket.query as query
 from trac.ticket.api import TicketSystem
-from trac.ticket.notification import TicketNotifyEmail
+from trac.notification.api import NotificationSystem
+from trac.ticket.notification import TicketChangeEvent
 from trac.ticket.web_ui import TicketModule
 from trac.web.chrome import add_warning
 from trac.util.datefmt import to_datetime, utc
@@ -177,8 +178,8 @@ class TicketRPC(Component):
         t.insert(when=when)
         if notify:
             try:
-                tn = TicketNotifyEmail(self.env)
-                tn.notify(t, newticket=True)
+                event = TicketChangeEvent('created', t, None, t['reporter'])
+                NotificationSystem(self.env).notify(event)
             except Exception, e:
                 self.log.exception("Failure sending notification on creation "
                                    "of ticket #%s: %s", t.id, e)
@@ -269,8 +270,8 @@ class TicketRPC(Component):
                     controller.apply_action_side_effects(req, t, action)
         if notify:
             try:
-                tn = TicketNotifyEmail(self.env)
-                tn.notify(t, newticket=False, modtime=when)
+                event = TicketChangeEvent('changed', t, t['changetime'], author)
+                NotificationSystem(self.env).notify(event)
             except Exception, e:
                 self.log.exception("Failure sending notification on change of "
                                    "ticket #%s: %s", t.id, e)
