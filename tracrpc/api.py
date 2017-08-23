@@ -14,6 +14,7 @@ import xmlrpclib
 
 from trac.core import *
 from trac.perm import IPermissionRequestor
+from trac.api import ISystemInfoProvider
 
 __all__ = ['expose_rpc', 'IRPCProtocol', 'IXMLRPCHandler', 'AbstractRPCHandler',
             'Method', 'XMLRPCSystem', 'Binary', 'RPCError', 'MethodNotFound',
@@ -253,13 +254,12 @@ class Method(object):
 
 class XMLRPCSystem(Component):
     """ Core of the RPC system. """
-    implements(IPermissionRequestor, IXMLRPCHandler)
+    implements(IPermissionRequestor, IXMLRPCHandler, ISystemInfoProvider)
 
     method_handlers = ExtensionPoint(IXMLRPCHandler)
 
-    def __init__(self):
-        self.env.systeminfo.append(('RPC',
-                        __import__('tracrpc', ['__version__']).__version__))
+    def get_system_info(self):
+        yield 'RPC', __import__('tracrpc', ['__version__']).__version__)
 
     # IPermissionRequestor methods
     def get_permission_actions(self):
